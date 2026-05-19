@@ -11,8 +11,17 @@ export const startKraken = (data) => async (dispatch, getState) => {
     dispatch({ type: TYPES.LOADING });
     // dispatch(removePod());
     const { kubeConfigFile } = getState().experiment;
+    const auth = getState().auth;
     if (kubeConfigFile) {
       data["isFileUpload"] = true;
+    }
+    if (data.kubeconfigId) {
+      data.kubeconfigId = parseInt(data.kubeconfigId, 10);
+    }
+    if (auth.activeGroupId) {
+      data.groupId = auth.activeGroupId;
+    } else if (auth.user?.groupIds?.length) {
+      data.groupId = auth.user.groupIds[0];
     }
     dispatch({
       type: TYPES.SET_POD_STATUS,

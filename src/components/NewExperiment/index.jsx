@@ -19,6 +19,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import KubeconfigFileUpload from "@/components/molecules/FileUpload";
+import KubeconfigSelect from "@/components/molecules/KubeconfigSelect";
 import { TextButton } from "@/components/atoms/Buttons/Buttons";
 import API from "@/utils/axiosInstance";
 import { extractReplayBaseStem } from "@/utils/replayNaming";
@@ -51,6 +52,7 @@ const NewExperiment = () => {
   const [replaySourceRunId, setReplaySourceRunId] = useState(null);
   const [replaySourceDisplayName, setReplaySourceDisplayName] = useState("");
   const [isBtnDisabled, setIsBtnDisabled] = useState(true);
+  const [kubeconfigSelection, setKubeconfigSelection] = useState("");
   const scenarioChecked = useSelector(
     (state) => state.experiment.scenarioChecked
   );
@@ -234,9 +236,12 @@ const NewExperiment = () => {
 
   const sendData = async () => {
     const base = { ...data[scenarioChecked] };
-    const payload = replaySourceRunId
+    let payload = replaySourceRunId
       ? { ...base, replayOfContainerId: replaySourceRunId }
       : base;
+    if (kubeconfigSelection && kubeconfigSelection !== "legacy") {
+      payload = { ...payload, kubeconfigId: parseInt(kubeconfigSelection, 10) };
+    }
     const ok = await dispatch(startKraken(payload));
     if (ok) {
       setReplaySourceRunId(null);
@@ -307,10 +312,19 @@ const NewExperiment = () => {
             <GridItem span={12}>
               <Grid hasGutter>
                 <GridItem span={6}>
-                  <FormGroup isRequired={false} label={"KUBECONFIG FILE"}>
-                    <KubeconfigFileUpload />
-                  </FormGroup>
+                  <KubeconfigSelect
+                    value={kubeconfigSelection}
+                    onChange={setKubeconfigSelection}
+                    allowLegacyUpload
+                  />
                 </GridItem>
+                {kubeconfigSelection === "legacy" ? (
+                  <GridItem span={6}>
+                    <FormGroup isRequired={false} label={"KUBECONFIG FILE"}>
+                      <KubeconfigFileUpload />
+                    </FormGroup>
+                  </GridItem>
+                ) : null}
               </Grid>
             </GridItem>
             {scenarioChecked &&

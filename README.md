@@ -41,6 +41,17 @@ Helper functions for the dashboard.
 
 krkn dashboard stores data using local browser storage and cookies. When run in a container, the SQLite database is stored in the mounted `database` directory (or `/data` inside the container).
 
+## Users and access control
+
+On first startup the server creates SQLite tables for users, groups, policies, past runs, and kubeconfigs. An initial **admin** account is generated automatically; credentials are printed once to the server log and written to `database/INITIAL_ADMIN.txt` (gitignored). Sign in at `/login` and change the password when prompted.
+
+- **Roles:** `admin` (full platform access), `user` (run/view/cancel per cluster policy), `viewer` (read-only past runs and metrics).
+- **Groups:** Past runs are scoped to groups; users can belong to multiple groups.
+- **Policies:** Grant `view`, `run`, `cancel`, or `admin` per cluster key (API server URL from kubeconfig) to users or groups in **Settings**.
+- **Kubeconfigs:** Upload cluster credentials under **Settings → Kubeconfigs** (or select when starting an experiment).
+
+Set `SESSION_SECRET` in production for session cookie signing.
+
 ## Template
 
 This application is based on v5 of PatternFly which is a production-ready UI solution for admin interfaces. For more information regarding the foundation and template of the application, please visit [PatternFly](https://www.patternfly.org/get-started/develop) 
