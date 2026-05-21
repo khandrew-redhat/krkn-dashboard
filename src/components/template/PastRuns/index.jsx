@@ -318,6 +318,7 @@ const PastRuns = () => {
     let cfg = row.scenario_params;
     let sourceId = row.container_id;
     let sourceDisplayName = displayName(row);
+    let replayGroupId = row.groupId ?? null;
 
     if (row.run_kind_normalized === "replay") {
       const parentId = row.replay_of_container_id;
@@ -349,6 +350,7 @@ const PastRuns = () => {
         cfg = orig.scenario_params;
         sourceId = orig.container_id;
         sourceDisplayName = displayName(orig);
+        replayGroupId = orig.groupId ?? replayGroupId;
       } catch {
         dispatch(
           showToast(
@@ -367,6 +369,7 @@ const PastRuns = () => {
           sourceContainerId: sourceId,
           sourceDisplayName,
           params: cfg,
+          groupId: replayGroupId,
         },
       },
     });

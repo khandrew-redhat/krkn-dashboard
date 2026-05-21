@@ -25,6 +25,7 @@ import { TextButton } from "@/components/atoms/Buttons/Buttons";
 import API from "@/utils/axiosInstance";
 import { extractReplayBaseStem } from "@/utils/replayNaming";
 import { paramsList } from "./experimentFormData";
+import { setActiveGroupId } from "@/actions/authActions";
 import { showToast } from "@/actions/toastActions";
 import { startKraken, updateScenarioChecked } from "@/actions/newExperiment";
 
@@ -155,7 +156,16 @@ const NewExperiment = () => {
     if (replayAppliedRef.current) return;
     const replay = location.state?.replay;
     if (!replay?.params || !replay?.sourceContainerId) return;
+
+    const targetGroupId =
+      replay.groupId != null ? parseInt(replay.groupId, 10) : null;
+    if (targetGroupId && activeGroupId !== targetGroupId) {
+      dispatch(setActiveGroupId(targetGroupId));
+      setKubeconfigSelection("");
+      return;
+    }
     if (!activeGroupId) return;
+
     const stored = replay.params;
     const scenario = stored.scenarioChecked;
     if (!scenario || !paramsList[scenario]) {
@@ -170,7 +180,7 @@ const NewExperiment = () => {
       try {
         const { data } = await API.post("/past-runs/allocate-replay-name", {
           baseStem: stem,
-          groupId: activeGroupId || undefined,
+          groupId: targetGroupId || activeGroupId || undefined,
         });
         const allocatedName = data?.name;
         if (!allocatedName) throw new Error("No name returned");
