@@ -4,6 +4,12 @@ export const GROUP_ROLE_OPTIONS = [
   { value: "admin", label: "Group admin" },
 ];
 
+/** Platform `user` accounts may only be group user or viewer. */
+export function groupRoleOptionsForPlatformRole(platformRole) {
+  if (platformRole === "admin") return GROUP_ROLE_OPTIONS;
+  return GROUP_ROLE_OPTIONS.filter((o) => o.value !== "admin");
+}
+
 export function formatGroupMemberships(memberships, groups) {
   if (!memberships?.length) return "—";
   return memberships

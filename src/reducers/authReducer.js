@@ -26,6 +26,8 @@ export default function authReducer(state = initialState, action) {
       return { ...state, kubeconfigs: action.payload };
     case TYPES.AUTH_SET_GROUPS:
       return { ...state, groups: action.payload };
+    case TYPES.AUTH_SET_ACTIVE_GROUP:
+      return { ...state, activeGroupId: action.payload };
     default:
       return state;
   }

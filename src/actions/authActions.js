@@ -74,3 +74,27 @@ export const fetchAdminGroups = () => async (dispatch) => {
   dispatch({ type: TYPES.AUTH_SET_GROUPS, payload: res.data.groups });
   return res.data.groups;
 };
+
+/** Groups the user may run experiments in (all groups for platform admin). */
+export const fetchRunGroups = () => async (dispatch, getState) => {
+  const user = getState().auth.user;
+  if (!user) return [];
+  const path = user.role === "admin" ? "/auth/groups" : "/auth/groups/mine";
+  const res = await API.get(path);
+  const groups = res.data.groups || [];
+  dispatch({ type: TYPES.AUTH_SET_GROUPS, payload: groups });
+  const validIds = groups.map((g) => g.id);
+  const { activeGroupId } = getState().auth;
+  if (!activeGroupId || !validIds.includes(activeGroupId)) {
+    dispatch({
+      type: TYPES.AUTH_SET_ACTIVE_GROUP,
+      payload: groups[0]?.id ?? null,
+    });
+  }
+  return groups;
+};
+
+export const setActiveGroupId = (groupId) => ({
+  type: TYPES.AUTH_SET_ACTIVE_GROUP,
+  payload: groupId,
+});

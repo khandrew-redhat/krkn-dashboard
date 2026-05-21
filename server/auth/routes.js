@@ -32,6 +32,7 @@ import {
 } from "./groupAccess.js";
 import { applySelfAccountUpdate } from "./accountUpdate.js";
 import {
+  assertGroupRoleForPlatformUser,
   isValidGroupRole,
   isValidPlatformRole,
   isMemberOfGroup,
@@ -210,7 +211,11 @@ router.post("/users", requireRole("admin"), async (req, res) => {
     mustChangePassword: true,
   });
   if (memberships.length) {
-    await usersDb.setUserGroupMemberships(userId, memberships);
+    try {
+      await usersDb.setUserGroupMemberships(userId, memberships);
+    } catch (e) {
+      return res.status(400).json({ error: e.message });
+    }
   }
   await recordAudit({
     userId: req.user.id,
@@ -238,7 +243,11 @@ router.patch("/users/:id", requireRole("admin"), async (req, res) => {
   }
   await usersDb.updateUser(id, updates);
   if (memberships != null) {
-    await usersDb.setUserGroupMemberships(id, memberships);
+    try {
+      await usersDb.setUserGroupMemberships(id, memberships);
+    } catch (e) {
+      return res.status(400).json({ error: e.message });
+    }
   }
   res.json({ ok: true });
 });
@@ -326,6 +335,11 @@ router.post("/groups/:id/members", async (req, res) => {
 
   const target = await usersDb.findById(userId);
   if (!target) return res.status(404).json({ error: "User not found" });
+  try {
+    assertGroupRoleForPlatformUser(target.role, memberRole);
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
 
   await groupsDb.addUserToGroup(userId, groupId, memberRole);
   await recordAudit({
@@ -353,6 +367,14 @@ router.patch("/groups/:id/members/:userId", async (req, res) => {
       return res.status(403).json({
         error: "You must be an admin member of this group",
       });
+    }
+
+    const target = await usersDb.findById(userId);
+    if (!target) return res.status(404).json({ error: "User not found" });
+    try {
+      assertGroupRoleForPlatformUser(target.role, memberRole);
+    } catch (e) {
+      return res.status(400).json({ error: e.message });
     }
 
     const updated = await groupsDb.setUserGroupRole(userId, groupId, memberRole);

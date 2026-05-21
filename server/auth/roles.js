@@ -22,6 +22,24 @@ export function isValidGroupRole(role) {
   return GROUP_ROLES.includes(role);
 }
 
+/** Group roles assignable to a platform `user` (never group admin). */
+export function allowedGroupRolesForPlatformRole(platformRole) {
+  if (platformRole === "admin") return GROUP_ROLES;
+  return ["user", "viewer"];
+}
+
+export function isGroupRoleAllowedForPlatformUser(platformRole, groupRole) {
+  return allowedGroupRolesForPlatformRole(platformRole).includes(groupRole);
+}
+
+export function assertGroupRoleForPlatformUser(platformRole, groupRole) {
+  if (!isGroupRoleAllowedForPlatformUser(platformRole, groupRole)) {
+    throw new Error(
+      "Platform user accounts cannot be assigned the group admin role"
+    );
+  }
+}
+
 export function isPlatformAdmin(user) {
   return user?.role === "admin";
 }

@@ -225,6 +225,16 @@ const MIGRATIONS = [
       await run(`UPDATE users SET role = 'user' WHERE role = 'viewer'`);
     },
   },
+  {
+    name: "010_platform_users_not_group_admin",
+    up: async () => {
+      await run(
+        `UPDATE user_groups SET role = 'user'
+         WHERE role = 'admin'
+           AND user_id IN (SELECT id FROM users WHERE role = 'user')`
+      );
+    },
+  },
 ];
 
 export async function runMigrations() {

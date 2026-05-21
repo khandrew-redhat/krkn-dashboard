@@ -1,4 +1,5 @@
 // Assisted-by: Cursor:Codex5.3
+import { assertGroupRoleForPlatformUser } from "../auth/roles.js";
 import { all, get, run } from "./connection.js";
 
 const PUBLIC_FIELDS = `id, username, role, must_change_password, disabled, created_at, updated_at`;
@@ -90,6 +91,8 @@ export async function getUserGroupIds(userId) {
 }
 
 export async function setUserGroupMemberships(userId, memberships) {
+  const account = await findById(userId);
+  const platformRole = account?.role ?? "user";
   await run(`DELETE FROM user_groups WHERE user_id = ?`, [userId]);
   for (const entry of memberships) {
     const groupId =
@@ -102,6 +105,7 @@ export async function setUserGroupMemberships(userId, memberships) {
     if (!["admin", "user", "viewer"].includes(role)) {
       throw new Error(`Invalid group role: ${role}`);
     }
+    assertGroupRoleForPlatformUser(platformRole, role);
     await run(
       `INSERT INTO user_groups (user_id, group_id, role) VALUES (?, ?, ?)`,
       [userId, groupId, role]

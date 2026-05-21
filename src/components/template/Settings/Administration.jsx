@@ -30,8 +30,8 @@ import { fetchAdminGroups, fetchKubeconfigs } from "@/actions/authActions";
 import { showToast } from "@/actions/toastActions";
 import GroupDetailPanel from "./GroupDetailPanel";
 import {
-  GROUP_ROLE_OPTIONS,
   formatGroupMemberships,
+  groupRoleOptionsForPlatformRole,
 } from "./groupRoleOptions";
 
 const Administration = () => {
@@ -162,6 +162,8 @@ const Administration = () => {
     setEditGroupMemberships((prev) => ({ ...prev, [groupId]: role }));
   };
 
+  const closeEditGroupsModal = () => setEditGroupsUser(null);
+
   const saveUserGroups = async () => {
     if (!editGroupsUser) return;
     try {
@@ -275,7 +277,17 @@ const Administration = () => {
               <FormSelect
                 id="new-user-role"
                 value={newUser.role}
-                onChange={(_e, v) => setNewUser({ ...newUser, role: v })}
+                onChange={(_e, v) => {
+                  setNewUser((prev) => {
+                    const memberships = { ...prev.groupMemberships };
+                    if (v === "user") {
+                      for (const gid of Object.keys(memberships)) {
+                        if (memberships[gid] === "admin") memberships[gid] = "user";
+                      }
+                    }
+                    return { ...prev, role: v, groupMemberships: memberships };
+                  });
+                }}
               >
                 <FormSelectOption value="user" label="User" />
                 <FormSelectOption value="admin" label="Admin" />
@@ -304,13 +316,15 @@ const Administration = () => {
                             value={newUser.groupMemberships[g.id] || "user"}
                             onChange={(_e, v) => setNewUserGroupRole(g.id, v)}
                           >
-                            {GROUP_ROLE_OPTIONS.map((o) => (
-                              <FormSelectOption
-                                key={o.value}
-                                value={o.value}
-                                label={o.label}
-                              />
-                            ))}
+                            {groupRoleOptionsForPlatformRole(newUser.role).map(
+                              (o) => (
+                                <FormSelectOption
+                                  key={o.value}
+                                  value={o.value}
+                                  label={o.label}
+                                />
+                              )
+                            )}
                           </FormSelect>
                         ) : null}
                       </div>
@@ -541,10 +555,16 @@ const Administration = () => {
           />
         </FormGroup>
         <div className="settings-page__modal-actions">
-          <Button variant="link" onClick={() => setEditingKubeconfig(null)}>
+          <Button
+            type="button"
+            variant="link"
+            onClick={() => setEditingKubeconfig(null)}
+          >
             Cancel
           </Button>
-          <Button onClick={saveKubeconfigRename}>Save</Button>
+          <Button type="button" onClick={saveKubeconfigRename}>
+            Save
+          </Button>
         </div>
       </Modal>
 
@@ -552,48 +572,63 @@ const Administration = () => {
         variant={ModalVariant.small}
         title={`Edit groups — ${editGroupsUser?.username || ""}`}
         isOpen={Boolean(editGroupsUser)}
-        onClose={() => setEditGroupsUser(null)}
+        onClose={closeEditGroupsModal}
       >
-        {groups.length === 0 ? (
-          <p className="settings-page__hint">No groups available.</p>
-        ) : (
-          <div className="settings-page__group-memberships">
-            {groups.map((g) => {
-              const checked = Boolean(editGroupMemberships[g.id]);
-              return (
-                <div key={g.id} className="settings-page__group-membership-row">
-                  <Checkbox
-                    id={`edit-user-group-${g.id}`}
-                    label={g.name}
-                    isChecked={checked}
-                    onChange={(_e, c) => toggleEditGroup(g.id, c)}
-                  />
-                  {checked ? (
-                    <FormSelect
-                      aria-label={`Role in ${g.name}`}
-                      value={editGroupMemberships[g.id] || "user"}
-                      onChange={(_e, v) => setEditGroupRole(g.id, v)}
+        {editGroupsUser ? (
+          <>
+            {groups.length === 0 ? (
+              <p className="settings-page__hint">No groups available.</p>
+            ) : (
+              <div className="settings-page__group-memberships">
+                {groups.map((g) => {
+                  const checked = Boolean(editGroupMemberships[g.id]);
+                  return (
+                    <div
+                      key={g.id}
+                      className="settings-page__group-membership-row"
                     >
-                      {GROUP_ROLE_OPTIONS.map((o) => (
-                        <FormSelectOption
-                          key={o.value}
-                          value={o.value}
-                          label={o.label}
-                        />
-                      ))}
-                    </FormSelect>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        )}
-        <div className="settings-page__modal-actions">
-          <Button variant="link" onClick={() => setEditGroupsUser(null)}>
-            Cancel
-          </Button>
-          <Button onClick={saveUserGroups}>Save</Button>
-        </div>
+                      <Checkbox
+                        id={`edit-user-group-${g.id}`}
+                        label={g.name}
+                        isChecked={checked}
+                        onChange={(_e, c) => toggleEditGroup(g.id, c)}
+                      />
+                      {checked ? (
+                        <FormSelect
+                          aria-label={`Role in ${g.name}`}
+                          value={editGroupMemberships[g.id] || "user"}
+                          onChange={(_e, v) => setEditGroupRole(g.id, v)}
+                        >
+                          {groupRoleOptionsForPlatformRole(
+                            editGroupsUser.role
+                          ).map((o) => (
+                            <FormSelectOption
+                              key={o.value}
+                              value={o.value}
+                              label={o.label}
+                            />
+                          ))}
+                        </FormSelect>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="settings-page__modal-actions">
+              <Button
+                type="button"
+                variant="link"
+                onClick={closeEditGroupsModal}
+              >
+                Cancel
+              </Button>
+              <Button type="button" onClick={saveUserGroups}>
+                Save
+              </Button>
+            </div>
+          </>
+        ) : null}
       </Modal>
     </div>
   );

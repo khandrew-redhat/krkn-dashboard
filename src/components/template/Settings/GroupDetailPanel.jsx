@@ -21,7 +21,7 @@ import { useDispatch, useSelector } from "react-redux";
 
 import API from "@/utils/axiosInstance";
 import { showToast } from "@/actions/toastActions";
-import { GROUP_ROLE_OPTIONS } from "./groupRoleOptions";
+import { groupRoleOptionsForPlatformRole } from "./groupRoleOptions";
 
 const PERMISSION_OPTIONS = [
   { value: "view", label: "View" },
@@ -85,6 +85,10 @@ const GroupDetailPanel = ({
 
   const memberIds = new Set(members.map((m) => m.id));
   const usersNotInGroup = allUsers.filter((u) => !memberIds.has(u.id));
+  const addTargetUser = allUsers.find((u) => u.id === parseInt(addUserId, 10));
+  const addRoleOptions = groupRoleOptionsForPlatformRole(
+    addTargetUser?.role || "user"
+  );
   const isMember = (user?.groupIds || []).includes(groupId);
 
   const uploadGroupKubeconfig = async () => {
@@ -245,7 +249,16 @@ const GroupDetailPanel = ({
             <FormSelect
               id="add-group-member"
               value={addUserId}
-              onChange={(_e, v) => setAddUserId(v)}
+              onChange={(_e, v) => {
+                setAddUserId(v);
+                const target = allUsers.find((u) => u.id === parseInt(v, 10));
+                const opts = groupRoleOptionsForPlatformRole(
+                  target?.role || "user"
+                );
+                if (!opts.some((o) => o.value === addMemberRole)) {
+                  setAddMemberRole("user");
+                }
+              }}
             >
               <FormSelectOption value="" label="Select user…" />
               {usersNotInGroup.map((u) => (
@@ -263,7 +276,7 @@ const GroupDetailPanel = ({
               value={addMemberRole}
               onChange={(_e, v) => setAddMemberRole(v)}
             >
-              {GROUP_ROLE_OPTIONS.map((o) => (
+              {addRoleOptions.map((o) => (
                 <FormSelectOption key={o.value} value={o.value} label={o.label} />
               ))}
             </FormSelect>
@@ -292,7 +305,9 @@ const GroupDetailPanel = ({
                     value={m.groupRole || "user"}
                     onChange={(_e, v) => updateMemberRole(m.id, v)}
                   >
-                    {GROUP_ROLE_OPTIONS.map((o) => (
+                    {groupRoleOptionsForPlatformRole(
+                      allUsers.find((u) => u.id === m.id)?.role || "user"
+                    ).map((o) => (
                       <FormSelectOption
                         key={o.value}
                         value={o.value}

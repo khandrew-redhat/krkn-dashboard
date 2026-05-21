@@ -2,7 +2,7 @@ import React, { useEffect } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 
-import { fetchCurrentUser } from "@/actions/authActions";
+import { fetchCurrentUser, fetchRunGroups } from "@/actions/authActions";
 import ChangePasswordModal from "@/components/ChangePasswordModal";
 
 const ProtectedRoute = () => {
@@ -13,6 +13,12 @@ const ProtectedRoute = () => {
   useEffect(() => {
     if (!user) {
       dispatch(fetchCurrentUser());
+    }
+  }, [dispatch, user]);
+
+  useEffect(() => {
+    if (user) {
+      dispatch(fetchRunGroups());
     }
   }, [dispatch, user]);
 

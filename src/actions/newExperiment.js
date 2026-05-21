@@ -17,10 +17,8 @@ export const startKraken = (data) => async (dispatch, getState) => {
     if (data.kubeconfigId) {
       data.kubeconfigId = parseInt(data.kubeconfigId, 10);
     }
-    if (auth.activeGroupId) {
+    if (data.groupId == null && auth.activeGroupId) {
       data.groupId = auth.activeGroupId;
-    } else if (auth.user?.groupIds?.length) {
-      data.groupId = auth.user.groupIds[0];
     }
     dispatch({
       type: TYPES.SET_POD_STATUS,

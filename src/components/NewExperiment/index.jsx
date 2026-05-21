@@ -19,6 +19,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import KubeconfigFileUpload from "@/components/molecules/FileUpload";
+import GroupSelect from "@/components/molecules/GroupSelect";
 import KubeconfigSelect from "@/components/molecules/KubeconfigSelect";
 import { TextButton } from "@/components/atoms/Buttons/Buttons";
 import API from "@/utils/axiosInstance";
@@ -56,6 +57,7 @@ const NewExperiment = () => {
   const scenarioChecked = useSelector(
     (state) => state.experiment.scenarioChecked
   );
+  const activeGroupId = useSelector((state) => state.auth.activeGroupId);
 
   const [data, setData] = useState({
     "pod-scenarios": {
@@ -153,6 +155,7 @@ const NewExperiment = () => {
     if (replayAppliedRef.current) return;
     const replay = location.state?.replay;
     if (!replay?.params || !replay?.sourceContainerId) return;
+    if (!activeGroupId) return;
     const stored = replay.params;
     const scenario = stored.scenarioChecked;
     if (!scenario || !paramsList[scenario]) {
@@ -167,6 +170,7 @@ const NewExperiment = () => {
       try {
         const { data } = await API.post("/past-runs/allocate-replay-name", {
           baseStem: stem,
+          groupId: activeGroupId || undefined,
         });
         const allocatedName = data?.name;
         if (!allocatedName) throw new Error("No name returned");
@@ -200,7 +204,7 @@ const NewExperiment = () => {
         navigate(location.pathname, { replace: true, state: {} });
       }
     })();
-  }, [location.state, location.pathname, navigate, dispatch]);
+  }, [location.state, location.pathname, navigate, dispatch, activeGroupId]);
 
   useEffect(() => {
     const scenarioData = data[scenarioChecked];
@@ -221,8 +225,8 @@ const NewExperiment = () => {
       );
     });
 
-    setIsBtnDisabled(!allRequiredFilled);
-  }, [data, scenarioChecked]);
+    setIsBtnDisabled(!allRequiredFilled || !activeGroupId);
+  }, [data, scenarioChecked, activeGroupId]);
 
   const changeHandler = (_event, value, key) => {
     setData((prevState) => ({
@@ -312,6 +316,11 @@ const NewExperiment = () => {
             <GridItem span={12}>
               <Grid hasGutter>
                 <GridItem span={6}>
+                  <GroupSelect
+                    onGroupChange={() => setKubeconfigSelection("")}
+                  />
+                </GridItem>
+                <GridItem span={6}>
                   <KubeconfigSelect
                     value={kubeconfigSelection}
                     onChange={setKubeconfigSelection}
@@ -319,7 +328,7 @@ const NewExperiment = () => {
                   />
                 </GridItem>
                 {kubeconfigSelection === "legacy" ? (
-                  <GridItem span={6}>
+                  <GridItem span={12}>
                     <FormGroup isRequired={false} label={"KUBECONFIG FILE"}>
                       <KubeconfigFileUpload />
                     </FormGroup>

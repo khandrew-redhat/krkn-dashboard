@@ -517,7 +517,13 @@ app.post("/past-runs/allocate-replay-name", async (req, res) => {
     if (stem == null || String(stem).trim() === "") {
       return res.status(400).json({ error: "baseStem is required" });
     }
-    const groupIds = filterGroupIdsForUser(req.user);
+    const groupIds = resolvePastRunsGroupIds(
+      req.user,
+      req.body?.groupId ?? ""
+    );
+    if (Array.isArray(groupIds) && groupIds.length === 0) {
+      return res.status(403).json({ error: "Invalid or unauthorized group" });
+    }
     const name = await allocateUniqueReplayDisplayName(String(stem), groupIds);
     return res.json({ name });
   } catch (err) {
