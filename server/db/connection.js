@@ -1,3 +1,4 @@
+// Assisted-by: Cursor:Codex5.3
 import * as path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";

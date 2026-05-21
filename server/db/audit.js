@@ -1,3 +1,4 @@
+// Assisted-by: Cursor:Codex5.3
 import { all, run } from "./connection.js";
 
 export async function recordAudit({

@@ -8,13 +8,19 @@ const KubeconfigSelect = ({ value, onChange, allowLegacyUpload }) => {
   const dispatch = useDispatch();
   const { kubeconfigs, user } = useSelector((state) => state.auth);
 
+  const activeGroupId = useSelector((state) => state.auth.activeGroupId);
+
   useEffect(() => {
-    if (user) dispatch(fetchKubeconfigs());
-  }, [dispatch, user]);
+    if (user) dispatch(fetchKubeconfigs(activeGroupId || undefined));
+  }, [dispatch, user, activeGroupId]);
+
+  const visible = activeGroupId
+    ? kubeconfigs.filter((k) => k.group_id === activeGroupId)
+    : kubeconfigs;
 
   const options = [
     { value: "", label: "Select kubeconfig…", disabled: false },
-    ...kubeconfigs.map((k) => ({
+    ...visible.map((k) => ({
       value: String(k.id),
       label: `${k.name} (${k.cluster_key})`,
     })),

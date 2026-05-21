@@ -1,3 +1,4 @@
+// Assisted-by: Cursor:Codex5.3
 import bcrypt from "bcryptjs";
 
 const ROUNDS = 12;

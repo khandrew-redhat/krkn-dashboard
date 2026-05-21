@@ -80,11 +80,7 @@ const Header = () => {
                 <Button
                   variant="plain"
                   className="header-user-icon"
-                  aria-label={
-                    user.role === "admin"
-                      ? `${user.username} — open settings`
-                      : `${user.username} — account`
-                  }
+                  aria-label={`${user.username} — open account settings`}
                   onClick={openSettings}
                 >
                   <UserIcon aria-hidden />

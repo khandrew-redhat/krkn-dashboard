@@ -1,9 +1,8 @@
 import * as TYPES from "./types";
 
-import API, { getUrl } from "@/utils/axiosInstance";
+import API from "@/utils/axiosInstance";
 
 import Cookies from "universal-cookie";
-import axios from "axios";
 import { showToast } from "./toastActions";
 
 export const startKraken = (data) => async (dispatch, getState) => {
@@ -200,17 +199,24 @@ export const fileUpload = (fileObj) => async (dispatch) => {
     const formData = new FormData();
 
     formData.append("files", fileObj);
-    const url = getUrl();
-    const response = await axios.post(`${url}/uploadFile`, formData, {
+    const response = await API.post("/uploadFile", formData, {
       headers: {
-        "content-type": "multipart/form-data",
+        "Content-Type": "multipart/form-data",
       },
     });
     if (response.data.status === "200") {
       dispatch(showToast("success", "File uploaded successfully", ""));
     }
-  } catch {
-    dispatch(showToast("danger", "Something went wrong", "Try again later"));
+  } catch (error) {
+    dispatch(
+      showToast(
+        "danger",
+        "Something went wrong",
+        error?.response?.data?.message ||
+          error?.response?.data?.error ||
+          "Try again later"
+      )
+    );
   }
   dispatch({ type: TYPES.COMPLETED });
 };

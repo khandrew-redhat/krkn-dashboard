@@ -1,3 +1,4 @@
+// Assisted-by: Cursor:Codex5.3
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
@@ -33,7 +34,7 @@ export async function bootstrapIfEmpty() {
     mustChangePassword: true,
   });
 
-  await groupsDb.addUserToGroup(userId, groupId);
+  await groupsDb.addUserToGroup(userId, groupId, "admin");
 
   for (const permission of ["view", "run", "cancel", "admin"]) {
     await policiesDb.createPolicy({

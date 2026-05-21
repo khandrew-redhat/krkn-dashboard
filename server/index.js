@@ -16,7 +16,11 @@ import {
 import { recordAudit } from "./db/audit.js";
 import { findById as findUserById } from "./db/users.js";
 import authRoutes from "./auth/routes.js";
-import { authorize, filterGroupIdsForUser } from "./auth/policy.js";
+import {
+  authorize,
+  filterGroupIdsForUser,
+  resolvePastRunsGroupIds,
+} from "./auth/policy.js";
 import { requireAuth } from "./auth/middleware.js";
 import { createSessionMiddleware } from "./auth/session.js";
 import { resolveRunContext } from "./helpers/runContext.js";
@@ -405,9 +409,6 @@ app.get("/getNamespaces", (req, res) => {
 
 app.get("/removePod", async (req, res) => {
   try {
-    if (req.user.role === "viewer") {
-      return res.status(403).json({ message: "Forbidden", status: "failed" });
-    }
     if (req.user.role !== "admin") {
       await authorize(req.user, "cancel", "*");
     }
@@ -479,7 +480,12 @@ app.get("/getConfig", async (req, res) => {
 });
 app.get("/getResults", async (req, res) => {
   try {
-    const result = await getResults();
+    const groupIds = filterGroupIdsForUser(req.user);
+    const rows =
+      groupIds === null
+        ? await getResults()
+        : await getDetailsForAnalytics({ groupIds });
+    const result = { status: 200, message: rows };
     return res.json(result);
   } catch (error) {
     return res.json(error);
@@ -497,6 +503,7 @@ async function enrichRunRowWithUser(row) {
   return {
     ...base,
     groupId: row.group_id ?? null,
+    groupName: row.group_name ?? null,
     kubeconfigId: row.kubeconfig_id ?? null,
     clusterKey: row.cluster_key ?? null,
     startedByUserId: row.started_by_user_id ?? null,
@@ -563,10 +570,34 @@ app.post("/past-runs", async (req, res) => {
       sortBy = "finishedAt",
       sortDir = "desc",
       focusContainerId = "",
+      groupId: filterGroupId = "",
       page = 1,
       perPage = 25,
     } = req.body || {};
-    const groupIds = filterGroupIdsForUser(req.user);
+    const groupIds = resolvePastRunsGroupIds(req.user, filterGroupId);
+    if (Array.isArray(groupIds) && groupIds.length === 0) {
+      return res.json({
+        stats: { total: 0, passes: 0, fails: 0, passPercent: 0 },
+        groups: [],
+        pagination: {
+          page: 1,
+          perPage: 25,
+          itemCount: 0,
+          totalPages: 1,
+        },
+        filters: {
+          nameRegex,
+          imageContains,
+          startDate,
+          endDate,
+          outcome,
+          runKind,
+          sortBy: sortBy === "name" ? "name" : "finishedAt",
+          sortDir: sortDir === "asc" ? "asc" : "desc",
+          groupId: filterGroupId ? String(filterGroupId) : "",
+        },
+      });
+    }
     let rows = await getDetailsForAnalytics({
       startDate,
       endDate,
@@ -638,6 +669,7 @@ app.post("/past-runs", async (req, res) => {
         runKind,
         sortBy: safeSortBy,
         sortDir: safeSortDir,
+        groupId: filterGroupId ? String(filterGroupId) : "",
       },
     });
   } catch (err) {
@@ -794,15 +826,16 @@ const uploadFiles = (req, res) => {
   res.json({ status: "200", message: "Successfully uploaded the file" });
 };
 
-const handleFileUploadError = (error, req, res) => {
-  res.json({ status: "400", message: "Error while uploading the file" });
-};
-app.post(
-  "/uploadFile",
-  upload.single("files"),
-  uploadFiles,
-  handleFileUploadError
-);
+app.post("/uploadFile", (req, res) => {
+  upload.single("files")(req, res, (err) => {
+    if (err) {
+      return res
+        .status(400)
+        .json({ status: "400", message: "Error while uploading the file" });
+    }
+    uploadFiles(req, res);
+  });
+});
 
 app.get("/grafana-dashboard-index", async (req, res) => {
   const baseUrl = req.query.baseUrl;

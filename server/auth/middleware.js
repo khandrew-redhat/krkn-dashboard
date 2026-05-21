@@ -1,3 +1,4 @@
+// Assisted-by: Cursor:Codex5.3
 import { loadSessionUser } from "./session.js";
 
 const PUBLIC_PATHS = new Set([

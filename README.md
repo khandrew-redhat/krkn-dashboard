@@ -45,10 +45,10 @@ krkn dashboard stores data using local browser storage and cookies. When run in 
 
 On first startup the server creates SQLite tables for users, groups, policies, past runs, and kubeconfigs. An initial **admin** account is generated automatically; credentials are printed once to the server log and written to `database/INITIAL_ADMIN.txt` (gitignored). Sign in at `/login` and change the password when prompted.
 
-- **Roles:** `admin` (full platform access), `user` (run/view/cancel per cluster policy), `viewer` (read-only past runs and metrics).
-- **Groups:** Past runs are scoped to groups; users can belong to multiple groups.
-- **Policies:** Grant `view`, `run`, `cancel`, or `admin` per cluster key (API server URL from kubeconfig) to users or groups in **Settings**.
-- **Kubeconfigs:** Upload cluster credentials under **Settings → Kubeconfigs** (or select when starting an experiment).
+- **Platform roles:** `admin` (user/group administration, full access) or `user` (run experiments, view data; may upload group kubeconfigs only).
+- **Groups:** Past runs are scoped to groups; users can belong to multiple groups with a **group role**: group admin, group user, or group viewer (controls run/view/cancel within that group via policies).
+- **Policies:** Grant `view`, `run`, `cancel`, or `admin` per cluster key (API server URL from kubeconfig) to groups in **Administration**.
+- **Kubeconfigs:** Platform admins manage kubeconfigs in **Administration**. Any group member can upload kubeconfigs for their groups under **Account Settings**; group admins can rename or delete them on **Manage group**.
 
 Set `SESSION_SECRET` in production for session cookie signing.
 

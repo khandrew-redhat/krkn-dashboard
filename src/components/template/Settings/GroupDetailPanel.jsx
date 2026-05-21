@@ -17,10 +17,11 @@ import {
   Tr,
 } from "@patternfly/react-table";
 import React, { useCallback, useEffect, useState } from "react";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 
 import API from "@/utils/axiosInstance";
 import { showToast } from "@/actions/toastActions";
+import { GROUP_ROLE_OPTIONS } from "./groupRoleOptions";
 
 const PERMISSION_OPTIONS = [
   { value: "view", label: "View" },
@@ -29,14 +30,25 @@ const PERMISSION_OPTIONS = [
   { value: "admin", label: "Admin (view, run, and cancel)" },
 ];
 
-const GroupDetailPanel = ({ groupId, allUsers, onBack, onChanged }) => {
+const GroupDetailPanel = ({
+  groupId,
+  allUsers,
+  canAssignMembers = false,
+  onBack,
+  onChanged,
+}) => {
   const dispatch = useDispatch();
+  const { user } = useSelector((state) => state.auth);
   const [loading, setLoading] = useState(true);
   const [group, setGroup] = useState(null);
   const [members, setMembers] = useState([]);
   const [policies, setPolicies] = useState([]);
+  const [kubeconfigs, setKubeconfigs] = useState([]);
   const [canManage, setCanManage] = useState(false);
+  const [kcName, setKcName] = useState("");
+  const [kcFile, setKcFile] = useState(null);
   const [addUserId, setAddUserId] = useState("");
+  const [addMemberRole, setAddMemberRole] = useState("user");
   const [newPolicy, setNewPolicy] = useState({
     clusterKey: "*",
     permission: "view",
@@ -45,10 +57,14 @@ const GroupDetailPanel = ({ groupId, allUsers, onBack, onChanged }) => {
   const loadDetail = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await API.get(`/auth/groups/${groupId}`);
+      const [res, kcRes] = await Promise.all([
+        API.get(`/auth/groups/${groupId}`),
+        API.get("/auth/kubeconfigs", { params: { groupId } }),
+      ]);
       setGroup(res.data.group);
       setMembers(res.data.members || []);
       setPolicies(res.data.policies || []);
+      setKubeconfigs(kcRes.data.kubeconfigs || []);
       setCanManage(Boolean(res.data.canManage));
     } catch (e) {
       dispatch(
@@ -69,20 +85,74 @@ const GroupDetailPanel = ({ groupId, allUsers, onBack, onChanged }) => {
 
   const memberIds = new Set(members.map((m) => m.id));
   const usersNotInGroup = allUsers.filter((u) => !memberIds.has(u.id));
+  const isMember = (user?.groupIds || []).includes(groupId);
+
+  const uploadGroupKubeconfig = async () => {
+    if (!kcFile || !kcName.trim()) {
+      dispatch(showToast("warning", "Enter a name and choose a file"));
+      return;
+    }
+    try {
+      const form = new FormData();
+      form.append("file", kcFile);
+      form.append("name", kcName.trim());
+      form.append("groupId", String(groupId));
+      await API.post("/auth/kubeconfigs", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setKcName("");
+      setKcFile(null);
+      dispatch(showToast("success", "Kubeconfig uploaded"));
+      await loadDetail();
+      await onChanged?.();
+    } catch (e) {
+      dispatch(
+        showToast("danger", "Upload failed", e.response?.data?.error)
+      );
+    }
+  };
+
+  const deleteGroupKubeconfig = async (id) => {
+    try {
+      await API.delete(`/auth/kubeconfigs/${id}`);
+      dispatch(showToast("success", "Kubeconfig deleted"));
+      await loadDetail();
+      await onChanged?.();
+    } catch (e) {
+      dispatch(
+        showToast("danger", "Delete failed", e.response?.data?.error)
+      );
+    }
+  };
 
   const addMember = async () => {
     if (!addUserId) return;
     try {
       await API.post(`/auth/groups/${groupId}/members`, {
         userId: parseInt(addUserId, 10),
+        role: addMemberRole,
       });
       setAddUserId("");
+      setAddMemberRole("user");
       dispatch(showToast("success", "Member added"));
       await loadDetail();
-      onChanged?.();
+      await onChanged?.();
     } catch (e) {
       dispatch(
         showToast("danger", "Failed to add member", e.response?.data?.error)
+      );
+    }
+  };
+
+  const updateMemberRole = async (userId, role) => {
+    try {
+      await API.patch(`/auth/groups/${groupId}/members/${userId}`, { role });
+      dispatch(showToast("success", "Member role updated"));
+      await loadDetail();
+      await onChanged?.();
+    } catch (e) {
+      dispatch(
+        showToast("danger", "Failed to update role", e.response?.data?.error)
       );
     }
   };
@@ -92,7 +162,7 @@ const GroupDetailPanel = ({ groupId, allUsers, onBack, onChanged }) => {
       await API.delete(`/auth/groups/${groupId}/members/${userId}`);
       dispatch(showToast("success", "Member removed"));
       await loadDetail();
-      onChanged?.();
+      await onChanged?.();
     } catch (e) {
       dispatch(
         showToast("danger", "Failed to remove member", e.response?.data?.error)
@@ -106,7 +176,7 @@ const GroupDetailPanel = ({ groupId, allUsers, onBack, onChanged }) => {
       setNewPolicy({ clusterKey: "*", permission: "view" });
       dispatch(showToast("success", "Policy added"));
       await loadDetail();
-      onChanged?.();
+      await onChanged?.();
     } catch (e) {
       dispatch(
         showToast("danger", "Failed to add policy", e.response?.data?.error)
@@ -119,7 +189,7 @@ const GroupDetailPanel = ({ groupId, allUsers, onBack, onChanged }) => {
       await API.delete(`/auth/groups/${groupId}/policies/${policyId}`);
       dispatch(showToast("success", "Policy removed"));
       await loadDetail();
-      onChanged?.();
+      await onChanged?.();
     } catch (e) {
       dispatch(
         showToast("danger", "Failed to remove policy", e.response?.data?.error)
@@ -161,15 +231,15 @@ const GroupDetailPanel = ({ groupId, allUsers, onBack, onChanged }) => {
           title="Read-only"
           className="settings-page__group-alert"
         >
-          You must be an admin member of this group to add or remove members and
-          policies.
+          You must be a group admin to manage members and policies. Any group
+          member can upload kubeconfigs from Account Settings.
         </Alert>
       ) : null}
 
       <Title headingLevel="h3" size="md" className="settings-page__section-title">
         Members
       </Title>
-      {canManage ? (
+      {canManage && canAssignMembers ? (
         <Form className="settings-form settings-form--inline">
           <FormGroup label="Add user" fieldId="add-group-member">
             <FormSelect
@@ -182,8 +252,19 @@ const GroupDetailPanel = ({ groupId, allUsers, onBack, onChanged }) => {
                 <FormSelectOption
                   key={u.id}
                   value={String(u.id)}
-                  label={`${u.username} (${u.role})`}
+                  label={`${u.username} (${u.role} platform)`}
                 />
+              ))}
+            </FormSelect>
+          </FormGroup>
+          <FormGroup label="Group role" fieldId="add-group-member-role">
+            <FormSelect
+              id="add-group-member-role"
+              value={addMemberRole}
+              onChange={(_e, v) => setAddMemberRole(v)}
+            >
+              {GROUP_ROLE_OPTIONS.map((o) => (
+                <FormSelectOption key={o.value} value={o.value} label={o.label} />
               ))}
             </FormSelect>
           </FormGroup>
@@ -196,16 +277,34 @@ const GroupDetailPanel = ({ groupId, allUsers, onBack, onChanged }) => {
         <Thead>
           <Tr>
             <Th>Username</Th>
-            <Th>Role</Th>
-            {canManage ? <Th>Actions</Th> : null}
+            <Th>Group role</Th>
+            {canManage && canAssignMembers ? <Th>Actions</Th> : null}
           </Tr>
         </Thead>
         <Tbody>
           {members.map((m) => (
             <Tr key={m.id}>
               <Td>{m.username}</Td>
-              <Td>{m.role}</Td>
-              {canManage ? (
+              <Td>
+                {canManage && canAssignMembers ? (
+                  <FormSelect
+                    aria-label={`Role for ${m.username}`}
+                    value={m.groupRole || "user"}
+                    onChange={(_e, v) => updateMemberRole(m.id, v)}
+                  >
+                    {GROUP_ROLE_OPTIONS.map((o) => (
+                      <FormSelectOption
+                        key={o.value}
+                        value={o.value}
+                        label={o.label}
+                      />
+                    ))}
+                  </FormSelect>
+                ) : (
+                  m.groupRole || "user"
+                )}
+              </Td>
+              {canManage && canAssignMembers ? (
                 <Td>
                   <Button variant="danger" onClick={() => removeMember(m.id)}>
                     Remove
@@ -274,6 +373,64 @@ const GroupDetailPanel = ({ groupId, allUsers, onBack, onChanged }) => {
           ))}
         </Tbody>
       </Table>
+
+      {isMember ? (
+        <>
+          <Title
+            headingLevel="h3"
+            size="md"
+            className="settings-page__section-title"
+          >
+            Kubeconfigs
+          </Title>
+          <p className="settings-page__hint">
+            Shared by all members of this group.
+          </p>
+          <Form className="settings-form">
+            <FormGroup label="Display name" fieldId="group-kc-name">
+              <TextInput
+                id="group-kc-name"
+                value={kcName}
+                onChange={(_e, v) => setKcName(v)}
+              />
+            </FormGroup>
+            <FormGroup label="File" fieldId="group-kc-file">
+              <input
+                id="group-kc-file"
+                type="file"
+                accept="*"
+                onChange={(e) => setKcFile(e.target.files?.[0] || null)}
+              />
+            </FormGroup>
+            <Button onClick={uploadGroupKubeconfig}>Upload</Button>
+          </Form>
+          <Table aria-label="Group kubeconfigs" variant="compact">
+            <Thead>
+              <Tr>
+                <Th>Name</Th>
+                <Th>Cluster</Th>
+                <Th>Actions</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
+              {kubeconfigs.map((k) => (
+                <Tr key={k.id}>
+                  <Td>{k.name}</Td>
+                  <Td>{k.cluster_key}</Td>
+                  <Td>
+                    <Button
+                      variant="danger"
+                      onClick={() => deleteGroupKubeconfig(k.id)}
+                    >
+                      Delete
+                    </Button>
+                  </Td>
+                </Tr>
+              ))}
+            </Tbody>
+          </Table>
+        </>
+      ) : null}
     </div>
   );
 };

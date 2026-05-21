@@ -49,11 +49,25 @@ export const changePassword =
     return res.data.user;
   };
 
-export const fetchKubeconfigs = () => async (dispatch) => {
-  const res = await API.get("/auth/kubeconfigs");
-  dispatch({ type: TYPES.AUTH_SET_KUBECONFIGS, payload: res.data.kubeconfigs });
-  return res.data.kubeconfigs;
-};
+export const updateAccount =
+  ({ username, currentPassword, newPassword }) => async (dispatch) => {
+    const body = {};
+    if (username !== undefined) body.username = username;
+    if (currentPassword !== undefined) body.currentPassword = currentPassword;
+    if (newPassword !== undefined) body.newPassword = newPassword;
+    const res = await API.patch("/auth/me", body);
+    dispatch({ type: TYPES.AUTH_SET_USER, payload: res.data.user });
+    dispatch(showToast("success", "Account updated"));
+    return res.data.user;
+  };
+
+export const fetchKubeconfigs =
+  (groupId = null) => async (dispatch) => {
+    const params = groupId != null ? { groupId } : {};
+    const res = await API.get("/auth/kubeconfigs", { params });
+    dispatch({ type: TYPES.AUTH_SET_KUBECONFIGS, payload: res.data.kubeconfigs });
+    return res.data.kubeconfigs;
+  };
 
 export const fetchAdminGroups = () => async (dispatch) => {
   const res = await API.get("/auth/groups");

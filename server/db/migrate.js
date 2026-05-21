@@ -1,3 +1,4 @@
+// Assisted-by: Cursor:Codex5.3
 import { all, exec, get, run } from "./connection.js";
 
 const MIGRATIONS = [
@@ -181,6 +182,47 @@ const MIGRATIONS = [
     name: "006_group_only_policies",
     up: async () => {
       await run(`DELETE FROM policies WHERE subject_type = 'user'`);
+    },
+  },
+  {
+    name: "007_user_groups_role",
+    up: async () => {
+      try {
+        await run(
+          `ALTER TABLE user_groups ADD COLUMN role TEXT NOT NULL DEFAULT 'user'`
+        );
+      } catch (e) {
+        if (!/duplicate column name/i.test(String(e?.message || ""))) {
+          throw e;
+        }
+      }
+      await run(
+        `UPDATE user_groups SET role = (
+          SELECT u.role FROM users u WHERE u.id = user_groups.user_id
+        )`
+      );
+    },
+  },
+  {
+    name: "008_kubeconfigs_group_required",
+    up: async () => {
+      const defaultGroup = await get(
+        `SELECT id FROM groups WHERE name = ? COLLATE NOCASE LIMIT 1`,
+        ["default-group"]
+      );
+      const fallback = await get(`SELECT id FROM groups ORDER BY id LIMIT 1`);
+      const gid = defaultGroup?.id ?? fallback?.id;
+      if (gid) {
+        await run(`UPDATE kubeconfigs SET group_id = ? WHERE group_id IS NULL`, [
+          gid,
+        ]);
+      }
+    },
+  },
+  {
+    name: "009_platform_roles_admin_user",
+    up: async () => {
+      await run(`UPDATE users SET role = 'user' WHERE role = 'viewer'`);
     },
   },
 ];

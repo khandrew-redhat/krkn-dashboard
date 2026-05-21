@@ -1,3 +1,4 @@
+// Assisted-by: Cursor:Codex5.3
 import child_process from "child_process";
 import fs from "fs";
 import { promisify } from "util";

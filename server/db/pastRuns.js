@@ -1,3 +1,4 @@
+// Assisted-by: Cursor:Codex5.3
 import {
   extractReplayBaseStem,
   formatReplayTimestampSuffix,
@@ -44,26 +45,29 @@ export const getDetailsForAnalytics = async ({
   const conditions = [];
   const params = [];
   if (startDate && String(startDate).trim()) {
-    conditions.push("date(COALESCE(stored_at, '')) >= date(?)");
+    conditions.push("date(COALESCE(pr.stored_at, '')) >= date(?)");
     params.push(String(startDate).trim());
   }
   if (endDate && String(endDate).trim()) {
-    conditions.push("date(COALESCE(stored_at, '')) <= date(?)");
+    conditions.push("date(COALESCE(pr.stored_at, '')) <= date(?)");
     params.push(String(endDate).trim());
   }
   if (imageContains && String(imageContains).trim()) {
-    conditions.push("lower(image) LIKE lower(?)");
+    conditions.push("lower(pr.image) LIKE lower(?)");
     params.push(`%${String(imageContains).trim()}%`);
   }
   if (groupIds != null && Array.isArray(groupIds)) {
     if (groupIds.length === 0) return [];
     const ph = groupIds.map(() => "?").join(",");
-    conditions.push(`group_id IN (${ph})`);
+    conditions.push(`pr.group_id IN (${ph})`);
     params.push(...groupIds);
   }
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   return all(
-    `SELECT * FROM ${TABLE} ${where} ORDER BY COALESCE(stored_at, '') DESC, rowid DESC`,
+    `SELECT pr.*, g.name AS group_name
+     FROM ${TABLE} pr
+     LEFT JOIN groups g ON g.id = pr.group_id
+     ${where} ORDER BY COALESCE(pr.stored_at, '') DESC, pr.rowid DESC`,
     params
   );
 };

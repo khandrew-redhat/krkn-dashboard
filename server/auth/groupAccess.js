@@ -1,13 +1,8 @@
-/** Group-scoped admin: platform admin who is a member of the group. */
-export function canManageGroup(user, groupId) {
-  const gid = parseInt(groupId, 10);
-  if (!gid || !user) return false;
-  return (
-    user.role === "admin" &&
-    Array.isArray(user.groupIds) &&
-    user.groupIds.includes(gid)
-  );
-}
+// Assisted-by: Cursor:Codex5.3
+export {
+  canManageGroup,
+  isMemberOfGroup,
+} from "./roles.js";
 
 export function parseGroupId(param) {
   const id = parseInt(param, 10);

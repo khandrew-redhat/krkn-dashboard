@@ -1,3 +1,4 @@
+// Assisted-by: Cursor:Codex5.3
 import fs from "fs";
 import path from "path";
 

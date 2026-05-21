@@ -1,3 +1,4 @@
+// Assisted-by: Cursor:Codex5.3
 import session from "express-session";
 
 const isProd = process.env.NODE_ENV === "production";
@@ -29,25 +30,29 @@ export function createSessionMiddleware() {
 export async function loadSessionUser(req) {
   const sid = req.session?.userId;
   if (!sid) return null;
-  const { findById, getUserGroupIds, toPublicUser } = await import(
+  const { findById, getUserGroupMemberships, toPublicUser } = await import(
     "../db/users.js"
   );
   const row = await findById(sid);
   if (!row || row.disabled) return null;
-  const groupIds = await getUserGroupIds(row.id);
+  const groupMemberships = await getUserGroupMemberships(row.id);
   return {
     ...toPublicUser(row),
-    groupIds,
+    groupMemberships,
+    groupIds: groupMemberships.map((m) => m.groupId),
   };
 }
 
 export async function attachUserToSession(req, userRow) {
-  const { getUserGroupIds, toPublicUser } = await import("../db/users.js");
-  const groupIds = await getUserGroupIds(userRow.id);
+  const { getUserGroupMemberships, toPublicUser } = await import(
+    "../db/users.js"
+  );
+  const groupMemberships = await getUserGroupMemberships(userRow.id);
   req.session.userId = userRow.id;
   req.session.user = {
     ...toPublicUser(userRow),
-    groupIds,
+    groupMemberships,
+    groupIds: groupMemberships.map((m) => m.groupId),
   };
   return req.session.user;
 }

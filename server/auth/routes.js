@@ -1,3 +1,4 @@
+// Assisted-by: Cursor:Codex5.3
 import { Router } from "express";
 import crypto from "crypto";
 import fs from "fs";
@@ -12,7 +13,8 @@ import {
   ensureKubeconfigsDir,
   getKubeconfigById,
   kubeconfigFilePath,
-  listKubeconfigsForUser,
+  listKubeconfigsForGroupIds,
+  updateKubeconfigName,
 } from "../db/kubeconfigs.js";
 import * as policiesDb from "../db/policies.js";
 import * as usersDb from "../db/users.js";
@@ -28,8 +30,42 @@ import {
   canManageGroup,
   parseGroupId,
 } from "./groupAccess.js";
+import { applySelfAccountUpdate } from "./accountUpdate.js";
+import {
+  isValidGroupRole,
+  isValidPlatformRole,
+  isMemberOfGroup,
+  isPlatformAdmin,
+} from "./roles.js";
+import {
+  canAccessKubeconfig,
+  canManageKubeconfig,
+  canUploadKubeconfig,
+} from "./kubeconfigAccess.js";
 
 const router = Router();
+
+function parseGroupMemberships(body) {
+  if (Array.isArray(body?.groupMemberships)) {
+    return body.groupMemberships
+      .map((m) => ({
+        groupId: parseInt(m.groupId, 10),
+        role: String(m.role || "user").toLowerCase(),
+      }))
+      .filter((m) => m.groupId && isValidGroupRole(m.role));
+  }
+  if (Array.isArray(body?.groupIds)) {
+    const defaultRole = String(body.defaultGroupRole || "user").toLowerCase();
+    if (!isValidGroupRole(defaultRole)) return [];
+    return body.groupIds
+      .map((id) => ({
+        groupId: parseInt(id, 10),
+        role: defaultRole,
+      }))
+      .filter((m) => m.groupId);
+  }
+  return null;
+}
 
 router.use(async (req, res, next) => {
   if (
@@ -119,51 +155,48 @@ router.get("/me", async (req, res) => {
 });
 
 router.post("/change-password", async (req, res) => {
-  const { currentPassword, newPassword } = req.body || {};
-  if (!newPassword || String(newPassword).length < 8) {
-    return res
-      .status(400)
-      .json({ error: "New password must be at least 8 characters" });
+  try {
+    const user = await applySelfAccountUpdate(req, req.body || {});
+    res.json({ user });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
   }
-  const row = await usersDb.findById(req.user.id);
-  if (!row) return res.status(401).json({ error: "Not authenticated" });
-  const mustChange = row.must_change_password === 1;
-  if (!mustChange) {
-    const ok = await verifyPassword(currentPassword || "", row.password_hash);
-    if (!ok) {
-      return res.status(400).json({ error: "Current password is incorrect" });
-    }
+});
+
+router.patch("/me", async (req, res) => {
+  try {
+    const user = await applySelfAccountUpdate(req, req.body || {});
+    res.json({ user });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
   }
-  const passwordHash = await hashPassword(newPassword);
-  await usersDb.updateUser(row.id, {
-    passwordHash,
-    mustChangePassword: false,
-  });
-  const updated = await usersDb.findById(row.id);
-  const user = await attachUserToSession(req, updated);
-  res.json({ user });
 });
 
 // --- Admin: users ---
 router.get("/users", requireRole("admin"), async (_req, res) => {
   const users = await usersDb.listUsers();
   const withGroups = await Promise.all(
-    users.map(async (u) => ({
-      ...u,
-      mustChangePassword: Boolean(u.must_change_password),
-      groupIds: await usersDb.getUserGroupIds(u.id),
-    }))
+    users.map(async (u) => {
+      const groupMemberships = await usersDb.getUserGroupMemberships(u.id);
+      return {
+        ...u,
+        mustChangePassword: Boolean(u.must_change_password),
+        groupMemberships,
+        groupIds: groupMemberships.map((m) => m.groupId),
+      };
+    })
   );
   res.json({ users: withGroups });
 });
 
 router.post("/users", requireRole("admin"), async (req, res) => {
-  const { username, password, role, groupIds = [] } = req.body || {};
+  const { username, password, role } = req.body || {};
+  const memberships = parseGroupMemberships(req.body) || [];
   if (!username || !password || !role) {
     return res.status(400).json({ error: "username, password, and role required" });
   }
-  if (!["admin", "user", "viewer"].includes(role)) {
-    return res.status(400).json({ error: "Invalid role" });
+  if (!isValidPlatformRole(role)) {
+    return res.status(400).json({ error: "Invalid platform role (admin or user)" });
   }
   const existing = await usersDb.findByUsername(username);
   if (existing) {
@@ -176,8 +209,8 @@ router.post("/users", requireRole("admin"), async (req, res) => {
     role,
     mustChangePassword: true,
   });
-  if (groupIds.length) {
-    await usersDb.setUserGroups(userId, groupIds);
+  if (memberships.length) {
+    await usersDb.setUserGroupMemberships(userId, memberships);
   }
   await recordAudit({
     userId: req.user.id,
@@ -191,9 +224,10 @@ router.post("/users", requireRole("admin"), async (req, res) => {
 
 router.patch("/users/:id", requireRole("admin"), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { role, disabled, groupIds, password } = req.body || {};
-  if (role && !["admin", "user", "viewer"].includes(role)) {
-    return res.status(400).json({ error: "Invalid role" });
+  const { role, disabled, password } = req.body || {};
+  const memberships = parseGroupMemberships(req.body);
+  if (role && !isValidPlatformRole(role)) {
+    return res.status(400).json({ error: "Invalid platform role (admin or user)" });
   }
   const updates = {};
   if (role != null) updates.role = role;
@@ -203,13 +237,31 @@ router.patch("/users/:id", requireRole("admin"), async (req, res) => {
     updates.mustChangePassword = true;
   }
   await usersDb.updateUser(id, updates);
-  if (Array.isArray(groupIds)) {
-    await usersDb.setUserGroups(id, groupIds);
+  if (memberships != null) {
+    await usersDb.setUserGroupMemberships(id, memberships);
   }
   res.json({ ok: true });
 });
 
 // --- Groups ---
+router.get("/groups/mine", async (req, res) => {
+  const memberships = req.user.groupMemberships || [];
+  const groups = [];
+  for (const m of memberships) {
+    const g = await groupsDb.findGroupById(m.groupId);
+    if (g) {
+      groups.push({
+        id: g.id,
+        name: g.name,
+        description: g.description,
+        groupRole: m.role,
+        canManage: m.role === "admin",
+      });
+    }
+  }
+  res.json({ groups });
+});
+
 router.get("/groups", requireRole("admin"), async (_req, res) => {
   const groups = await groupsDb.listGroups();
   res.json({ groups });
@@ -224,9 +276,13 @@ router.post("/groups", requireRole("admin"), async (req, res) => {
   res.status(201).json({ id });
 });
 
-router.get("/groups/:id", requireRole("admin"), async (req, res) => {
+router.get("/groups/:id", async (req, res) => {
   const groupId = parseGroupId(req.params.id);
   if (!groupId) return res.status(400).json({ error: "Invalid group id" });
+
+  if (!isMemberOfGroup(req.user, groupId) && !isPlatformAdmin(req.user)) {
+    return res.status(403).json({ error: "Not a member of this group" });
+  }
 
   const group = await groupsDb.findGroupById(groupId);
   if (!group) return res.status(404).json({ error: "Group not found" });
@@ -254,7 +310,7 @@ router.get("/groups/:id", requireRole("admin"), async (req, res) => {
   });
 });
 
-router.post("/groups/:id/members", requireRole("admin"), async (req, res) => {
+router.post("/groups/:id/members", async (req, res) => {
   const groupId = parseGroupId(req.params.id);
   if (!groupId) return res.status(400).json({ error: "Invalid group id" });
   if (!canManageGroup(req.user, groupId)) {
@@ -262,27 +318,60 @@ router.post("/groups/:id/members", requireRole("admin"), async (req, res) => {
   }
 
   const userId = parseInt(req.body?.userId, 10);
+  const memberRole = String(req.body?.role || "user").toLowerCase();
   if (!userId) return res.status(400).json({ error: "userId required" });
+  if (!isValidGroupRole(memberRole)) {
+    return res.status(400).json({ error: "Invalid group role" });
+  }
 
   const target = await usersDb.findById(userId);
   if (!target) return res.status(404).json({ error: "User not found" });
 
-  await groupsDb.addUserToGroup(userId, groupId);
+  await groupsDb.addUserToGroup(userId, groupId, memberRole);
   await recordAudit({
     groupId,
     userId: req.user.id,
     action: "group.member_added",
     resourceType: "user",
     resourceId: String(userId),
-    metadata: { username: target.username },
+    metadata: { username: target.username, role: memberRole },
   });
   res.status(201).json({ ok: true });
 });
 
-router.delete(
-  "/groups/:id/members/:userId",
-  requireRole("admin"),
-  async (req, res) => {
+router.patch("/groups/:id/members/:userId", async (req, res) => {
+    const groupId = parseGroupId(req.params.id);
+    const userId = parseInt(req.params.userId, 10);
+    const memberRole = String(req.body?.role || "").toLowerCase();
+    if (!groupId || !userId) {
+      return res.status(400).json({ error: "Invalid id" });
+    }
+    if (!isValidGroupRole(memberRole)) {
+      return res.status(400).json({ error: "Invalid group role" });
+    }
+    if (!canManageGroup(req.user, groupId)) {
+      return res.status(403).json({
+        error: "You must be an admin member of this group",
+      });
+    }
+
+    const updated = await groupsDb.setUserGroupRole(userId, groupId, memberRole);
+    if (!updated) {
+      return res.status(404).json({ error: "Member not found in group" });
+    }
+    await recordAudit({
+      groupId,
+      userId: req.user.id,
+      action: "group.member_role_updated",
+      resourceType: "user",
+      resourceId: String(userId),
+      metadata: { role: memberRole },
+    });
+    res.json({ ok: true });
+  }
+);
+
+router.delete("/groups/:id/members/:userId", async (req, res) => {
     const groupId = parseGroupId(req.params.id);
     const userId = parseInt(req.params.userId, 10);
     if (!groupId || !userId) {
@@ -304,7 +393,7 @@ router.delete(
   }
 );
 
-router.post("/groups/:id/policies", requireRole("admin"), async (req, res) => {
+router.post("/groups/:id/policies", async (req, res) => {
   const groupId = parseGroupId(req.params.id);
   if (!groupId) return res.status(400).json({ error: "Invalid group id" });
   if (!canManageGroup(req.user, groupId)) {
@@ -345,10 +434,7 @@ router.post("/groups/:id/policies", requireRole("admin"), async (req, res) => {
   }
 });
 
-router.delete(
-  "/groups/:id/policies/:policyId",
-  requireRole("admin"),
-  async (req, res) => {
+router.delete("/groups/:id/policies/:policyId", async (req, res) => {
     const groupId = parseGroupId(req.params.id);
     const policyId = parseInt(req.params.policyId, 10);
     if (!groupId || !policyId) {
@@ -442,31 +528,45 @@ const upload = multer({
 });
 
 router.get("/kubeconfigs", async (req, res) => {
-  const isAdmin = req.user.role === "admin";
-  const list = await listKubeconfigsForUser(
-    req.user.id,
-    req.user.groupIds || [],
-    isAdmin
-  );
+  const groupIds = req.user.groupIds || [];
+  const filterGroupId = req.query.groupId
+    ? parseInt(req.query.groupId, 10)
+    : null;
+  const list = await listKubeconfigsForGroupIds(groupIds, {
+    groupIdFilter: filterGroupId,
+  });
   res.json({ kubeconfigs: list });
 });
 
 router.post(
   "/kubeconfigs",
-  requireRole("admin", "user"),
   upload.single("file"),
   async (req, res) => {
     try {
       if (!req.file?.path) {
         return res.status(400).json({ error: "Kubeconfig file required" });
       }
-      const name = req.body?.name || req.file.originalname || "kubeconfig";
-      const groupId = req.body?.groupId
-        ? parseInt(req.body.groupId, 10)
-        : null;
+      const name = String(req.body?.name || "").trim();
+      const groupId = parseInt(req.body?.groupId, 10);
+      if (!name) {
+        return res.status(400).json({ error: "Display name is required" });
+      }
+      if (!groupId) {
+        return res.status(400).json({ error: "groupId is required" });
+      }
+      if (!canUploadKubeconfig(req.user, groupId)) {
+        return res.status(403).json({
+          error: "You must be a member of this group to upload kubeconfigs",
+        });
+      }
+
+      const group = await groupsDb.findGroupById(groupId);
+      if (!group) {
+        return res.status(404).json({ error: "Group not found" });
+      }
+
       const clusterKey = await deriveClusterKey(req.file.path);
       const contextName = await deriveContextName(req.file.path);
-      const storagePath = kubeconfigFilePath("pending");
       const id = await createKubeconfigRecord({
         name,
         ownerUserId: req.user.id,
@@ -490,21 +590,51 @@ router.post(
         resourceId: String(id),
         metadata: { name, clusterKey },
       });
-      res.status(201).json({ id, clusterKey, contextName });
+      res.status(201).json({ id, name, groupId, clusterKey, contextName });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
   }
 );
 
-router.delete("/kubeconfigs/:id", requireRole("admin", "user"), async (req, res) => {
+router.patch("/kubeconfigs/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const name = String(req.body?.name || "").trim();
+  if (!name) {
+    return res.status(400).json({ error: "Display name is required" });
+  }
+  const row = await getKubeconfigById(id);
+  if (!row) return res.status(404).json({ error: "Not found" });
+  if (!canManageKubeconfig(req.user, row)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  await updateKubeconfigName(id, name);
+  await recordAudit({
+    groupId: row.group_id,
+    userId: req.user.id,
+    action: "kubeconfig.renamed",
+    resourceType: "kubeconfig",
+    resourceId: String(id),
+    metadata: { name },
+  });
+  res.json({ ok: true });
+});
+
+router.delete("/kubeconfigs/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const row = await getKubeconfigById(id);
   if (!row) return res.status(404).json({ error: "Not found" });
-  if (req.user.role !== "admin" && row.owner_user_id !== req.user.id) {
+  if (!canManageKubeconfig(req.user, row)) {
     return res.status(403).json({ error: "Forbidden" });
   }
   await deleteKubeconfig(id);
+  await recordAudit({
+    groupId: row.group_id,
+    userId: req.user.id,
+    action: "kubeconfig.deleted",
+    resourceType: "kubeconfig",
+    resourceId: String(id),
+  });
   res.json({ ok: true });
 });
 

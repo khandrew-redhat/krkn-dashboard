@@ -18,19 +18,25 @@ const baseMenuOptions = [
     key: "past-runs",
     displayName: "Past Runs",
     icon: <CatalogIcon />,
-    roles: ["admin", "user", "viewer"],
+    roles: ["admin", "user"],
   },
   {
     key: "elastic-runs",
     displayName: "Elastic Runs",
     icon: <CatalogIcon />,
-    roles: ["admin", "user", "viewer"],
+    roles: ["admin", "user"],
   },
   {
     key: "settings",
-    displayName: "Settings",
+    displayName: "Account Settings",
     icon: <CatalogIcon />,
-    roles: ["admin", "user", "viewer"],
+    roles: ["admin", "user"],
+  },
+  {
+    key: "administration",
+    displayName: "Administration",
+    icon: <CatalogIcon />,
+    roles: ["admin"],
   },
 ];
 

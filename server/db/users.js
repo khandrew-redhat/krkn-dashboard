@@ -1,3 +1,4 @@
+// Assisted-by: Cursor:Codex5.3
 import { all, get, run } from "./connection.js";
 
 const PUBLIC_FIELDS = `id, username, role, must_change_password, disabled, created_at, updated_at`;
@@ -21,12 +22,19 @@ export async function listUsers() {
   return all(`SELECT ${PUBLIC_FIELDS} FROM users ORDER BY username`);
 }
 
+export function assertValidPlatformRole(role) {
+  if (!["admin", "user"].includes(role)) {
+    throw new Error(`Invalid platform role: ${role}`);
+  }
+}
+
 export async function createUser({
   username,
   passwordHash,
   role,
   mustChangePassword = false,
 }) {
+  assertValidPlatformRole(role);
   const result = await run(
     `INSERT INTO users (username, password_hash, role, must_change_password)
      VALUES (?, ?, ?, ?)`,
@@ -39,6 +47,7 @@ export async function updateUser(id, fields) {
   const sets = [];
   const params = [];
   if (fields.role != null) {
+    assertValidPlatformRole(fields.role);
     sets.push("role = ?");
     params.push(fields.role);
   }
@@ -54,28 +63,61 @@ export async function updateUser(id, fields) {
     sets.push("password_hash = ?");
     params.push(fields.passwordHash);
   }
+  if (fields.username != null) {
+    sets.push("username = ?");
+    params.push(fields.username);
+  }
   if (!sets.length) return;
   sets.push("updated_at = datetime('now')");
   params.push(id);
   await run(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`, params);
 }
 
-export async function getUserGroupIds(userId) {
+export async function getUserGroupMemberships(userId) {
   const rows = await all(
-    `SELECT group_id FROM user_groups WHERE user_id = ?`,
+    `SELECT group_id AS groupId, role FROM user_groups WHERE user_id = ? ORDER BY group_id`,
     [userId]
   );
-  return rows.map((r) => r.group_id);
+  return rows.map((r) => ({
+    groupId: r.groupId,
+    role: r.role || "user",
+  }));
 }
 
-export async function setUserGroups(userId, groupIds) {
+export async function getUserGroupIds(userId) {
+  const memberships = await getUserGroupMemberships(userId);
+  return memberships.map((m) => m.groupId);
+}
+
+export async function setUserGroupMemberships(userId, memberships) {
   await run(`DELETE FROM user_groups WHERE user_id = ?`, [userId]);
-  for (const gid of groupIds) {
-    await run(`INSERT INTO user_groups (user_id, group_id) VALUES (?, ?)`, [
-      userId,
-      gid,
-    ]);
+  for (const entry of memberships) {
+    const groupId =
+      typeof entry === "number" ? entry : parseInt(entry.groupId, 10);
+    const role =
+      typeof entry === "number"
+        ? "user"
+        : String(entry.role || "user").toLowerCase();
+    if (!groupId) continue;
+    if (!["admin", "user", "viewer"].includes(role)) {
+      throw new Error(`Invalid group role: ${role}`);
+    }
+    await run(
+      `INSERT INTO user_groups (user_id, group_id, role) VALUES (?, ?, ?)`,
+      [userId, groupId, role]
+    );
   }
+}
+
+/** @deprecated Use setUserGroupMemberships; assigns defaultRole per group. */
+export async function setUserGroups(userId, groupIds, defaultRole = "user") {
+  await setUserGroupMemberships(
+    userId,
+    (groupIds || []).map((groupId) => ({
+      groupId,
+      role: defaultRole,
+    }))
+  );
 }
 
 export function toPublicUser(row) {

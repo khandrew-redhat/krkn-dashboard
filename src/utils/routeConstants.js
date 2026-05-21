@@ -5,3 +5,5 @@ export const RESULTS = "results";
 export const PAST_RUNS = "past-runs";
 export const ELASTIC_RUNS = "elastic-runs";
 export const SETTINGS = "settings";
+export const ADMINISTRATION = "administration";
+export const GROUP_MANAGE = "group/:groupId";

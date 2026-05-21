@@ -1,3 +1,4 @@
+// Assisted-by: Cursor:Codex5.3
 import { all, get, run } from "./connection.js";
 
 const VALID_PERMISSIONS = ["view", "run", "cancel", "admin"];
